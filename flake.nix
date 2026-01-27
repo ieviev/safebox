@@ -13,9 +13,59 @@
       perSystem =
         {
           pkgs,
+          lib,
           system,
           ...
         }:
+        let
+          ipRangesRaw = builtins.readFile ./ip-ranges.txt;
+          ipRangesList = builtins.filter (x: x != "") (lib.splitString "\n" ipRangesRaw);
+
+          isIPv6 = addr: builtins.match ".*:.*" addr != null;
+          ipv4Ranges = builtins.filter (addr: !(isIPv6 addr)) ipRangesList;
+          ipv6Ranges = builtins.filter isIPv6 ipRangesList;
+
+          entrypoint = pkgs.writeShellScript "entrypoint.sh" ''
+            if ${pkgs.nftables}/bin/nft list ruleset >/dev/null 2>&1; then
+              ${pkgs.nftables}/bin/nft -f /etc/nftables/safebox.conf
+              echo "CAP_NET_ADMIN: firewall rules applied"
+            fi
+            exec "$@"
+          '';
+
+          nftablesConfig = pkgs.writeText "nftables.conf" ''
+            #!/usr/sbin/nft -f
+            flush ruleset
+            table inet nat {
+              set allowed_v4 {
+                type ipv4_addr
+                flags interval
+                elements = {
+                  ${lib.concatStringsSep ",\n                  " ipv4Ranges}
+                }
+              }
+
+              set allowed_v6 {
+                type ipv6_addr
+                flags interval
+                elements = {
+                  ${lib.concatStringsSep ",\n                  " ipv6Ranges}
+                }
+              }
+
+              chain output {
+                type nat hook output priority -100; policy accept;
+                # Skip loopback
+                oif lo accept
+                # Allow DNS
+                meta l4proto { tcp, udp } th dport 53 accept
+                # Reroute non-whitelisted HTTP/HTTPS to zero IP
+                tcp dport { 80, 443 } ip daddr != @allowed_v4 dnat to 0.0.0.0
+                tcp dport { 80, 443 } ip6 daddr != @allowed_v6 dnat to ::
+              }
+            }
+          '';
+        in
         {
           _module.args.pkgs = import nixpkgs {
             inherit system;
@@ -38,12 +88,10 @@
               pkgs.bash
               pkgs.coreutils
               pkgs.curl
-              # tools it sometimes should use instead
-              pkgs.fd
-              pkgs.sd
-              pkgs.ripgrep
               # to debug why something isnt working in the sandbox
               pkgs.strace
+              # network filtering
+              pkgs.nftables
               # tools you might need
               # pkgs.libc
               # pkgs.git
@@ -56,10 +104,13 @@
               echo "claude:x:1000:1000:claude:/home/claude:/bin/sh" > /etc/passwd
               mkdir -p /home/claude
               chown 1000:1000 /home/claude
+              mkdir -p /etc/nftables
+              cp ${nftablesConfig} /etc/nftables/safebox.conf
+              chmod 644 /etc/nftables/safebox.conf
             '';
             config = {
-              Cmd = [ "claude" ];
-              # nixos ssl certs for node ssl won't fail
+              Entrypoint = [ "${entrypoint}" ];
+              # nixos ssl certs are in a nonstandard location
               Env = [
                 "SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt"
                 "SSL_CERT_DIR=/etc/ssl/certs"

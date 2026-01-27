@@ -13,6 +13,7 @@ podman run \
 	-w "$PWD" \
 	--rm \
 	--name "safebox-$(date +%s)" \
+    --cap-add=NET_ADMIN \
 	-ti \
 	--user claude \
 	--userns=keep-id:uid=$(id -u),gid=$(id -g) \

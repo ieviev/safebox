@@ -1,26 +1,27 @@
 ## security-hardened container for running [Claude Code](https://github.com/anthropics/claude-code)
 
-i was going to originally call this claudebox, but that name is taken,
-and there are many solutions out there, but most have something wrong with them. so this is safebox.
+(opinionated rant)
+i looked through many other solutions, but wasn't satisfied with them, then i was going to originally call this claudebox, but that name is taken. so this is **safebox**:
 
 ### highlights:
-- this takes security seriously
-- lines of code is not a metric to be proud of and we're not supposed to push 30 folders and 20 000 lines of slop here, it should be as small as possible
-- reduced attack surface: 
-  - builds from a flake on top of a distroless base
-  - sudo, package managers, etc. are not even installed, (see [flake.nix](flake.nix#29-49))
+- security is taken seriously!
+- lines of code is not a metric to be proud of, and we're not pushing 20 000 lines of slop here, it is small, well tested and human-written.
+- minimal attack surface from the LLM: 
+  - builds from a deterministic flake on top of a distroless base
+  - sudo, package managers, etc. are not even installed, (see [flake.nix](flake.nix#L79-L97) for included tools)
 - podman container to be run as non-root user inside
   - shares uid with current user but creates /home/claude home directory as user 'claude' inside container
   - only mounts current path, claude config, npm cache. (see [run.sh](run.sh))
-
-### included tools
-
-see [flake.nix](flake.nix#28-50) for the list of tools and how the container is built.
+- no risk of data loss, assuming you at least use version control:
+  - as an experiment, running `rm -rf --no-preserve-root /` inside the container (don't do this at home, kids!) only wiped the writable mounts (current dir, claude configs, npm cache) and left the rest intact
+- data exfiltration protections: 
+  - claude cannot exfiltrate data outside the mounted folders
+  - optional whitelisted firewall rules (see [data exfiltration protection](#data-exfiltration-protection))
 
 ### usage
 
 **prerequisites**:
-- [nix](https://nixos.org/download/) package manager
+- [nix](https://nixos.org/download/) to build the container image
 - [podman](https://podman.io/docs/installation) container runtime
 - existing claude code authentication (`~/.claude.json` and `~/.claude/` must exist from a previous `claude` login)
 
@@ -46,6 +47,21 @@ run.sh mounts the following:
 - `~/.npm/` → npm cache for packages
 - `$PWD` → current working directory (mounted at same path inside container)
 
+
+### data exfiltration protection
+
+by default, the container allows outbound network access to any destination. to restrict outbound connections to only whitelisted IPs, use `run-firewall.sh`:
+
+```sh
+./run-firewall.sh claude
+```
+
+this applies nftables rules that reroute HTTP/HTTPS traffic to non-whitelisted destinations to `0.0.0.0`, causing immediate connection failure instead of allowing the request.
+
+the allowed IP ranges in [ip-ranges.txt](ip-ranges.txt) are generated from `./gen-ip-ranges.sh` at build time similar to [anthropic's devcontainer](https://github.com/anthropics/claude-code/blob/main/.devcontainer/init-firewall.sh). DNS is allowed to any destination (necessary for resolution).
+
+if firewall capability is available, it is applied automatically on container startup and a message is printed to indicate it was applied.
+
 ### troubleshooting
 
 strace is included for debugging. if something isn't working inside the container:
@@ -55,6 +71,10 @@ strace is included for debugging. if something isn't working inside the containe
 # inside the container, run:
 strace 2>trace.txt claude
 ```
+
+> `which: no code in...` / `which: no vi in...` on startup: 
+
+you can ignore these warnings, claude looks for some applications on startup, but we don't want these installed in the container.
 
 ### license
 
