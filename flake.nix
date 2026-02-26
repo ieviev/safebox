@@ -115,6 +115,7 @@
                   "rust-analyzer"
                 ])
                 inputs.fenix.packages.${system}.targets.x86_64-unknown-linux-musl.latest.rust-std
+                inputs.fenix.packages.${system}.targets.aarch64-unknown-linux-musl.latest.rust-std
               ];
               runtimeLibs = with pkgs; [
                 libx11
