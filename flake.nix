@@ -28,6 +28,16 @@
             inherit system;
             config.allowUnfree = true;
           };
+          claude-code = pkgsUnstable.claude-code.overrideAttrs (old: rec {
+            version = "2.1.63";
+            src = pkgs.fetchzip {
+              url = "https://registry.npmjs.org/@anthropic-ai/claude-code/-/claude-code-${version}.tgz";
+              hash = "sha256-tVk1GXqh9Ice8ZbbLnmN4sSlIY41KsrqWi2eDo47/zI=";
+            };
+            # postPatch = old.postPatch + ''
+            #   sed -i 's/"version": "${old.version}"/"version": "${version}"/g' package-lock.json
+            # '';
+          });
           ipRangesRaw = builtins.readFile ./ip-ranges.txt;
           ipRangesList = builtins.filter (x: x != "") (lib.splitString "\n" ipRangesRaw);
 
@@ -163,7 +173,7 @@
                 pkgs.nftables
                 # pkgs.nix-ld
                 # minimum for claude code
-                pkgsUnstable.claude-code
+                claude-code
                 pkgs.nodejs_25
                 pkgs.which
                 pkgs.openssl
@@ -208,7 +218,7 @@
                 # nixos ssl certs are in a nonstandard location
                 Env = [
                   # increase the output token limit, this happens sometimes
-                  "CLAUDE_CODE_MAX_OUTPUT_TOKENS=64000" 
+                  "CLAUDE_CODE_MAX_OUTPUT_TOKENS=100000" 
                   "OPENSPEC_TELEMETRY=0"
                   "SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt"
                   "SSL_CERT_DIR=/etc/ssl/certs"
